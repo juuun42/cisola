@@ -1,319 +1,627 @@
 <!DOCTYPE html>
 <html>
-<head> 
-  <!-- Google Maps JavaScript APIの読み込み -->
-  <script type="text/javascript" src="https://maps.googleapis.com/maps/api/js?key=AIzaSyB4fyRZ6ud_osb5R7epIfAEXN7oEJIMDB8&libraries=visualization" async defer></script>
+  <head>
+    <base target="_top">
+    <meta charset="UTF-8">
+    <title>青森市ゴミマップ</title>
+    
+    <!-- Google Maps JavaScript APIの読み込み -->
+    <script type="text/javascript" src="https://maps.googleapis.com/maps/api/js?key=AIzaSyB4fyRZ6ud_osb5R7epIfAEXN7oEJIMDB8&libraries=visualization" async defer></script>
+    
+    <style>
+      /* 全体のスタイルをリセットし、余白をなくす */
+      body, html {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        width: 100%;
+        overflow: hidden;
+        font-family: Arial, sans-serif;
+        background-color: #f0f0f0;
+      }
 
-  <!-- piexifjsの読み込みを削除 -->
-  <!-- <script src="https://cdn.jsdelivr.net/npm/piexifjs"></script> -->
+      /* ヘッダー（フィルターとカメラボタン） */
+      #header {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        padding: 30px 20px;
+        z-index: 10;
+        display: flex;
+        align-items: center;
+        gap: 40px;
+      }
 
-  <script>
-    var geoData = []; // データを保持するための変数
-    var heatmap; // ヒートマップレイヤーをグローバルに保持
-    var map; // マップオブジェクトをグローバルに保持
-    var currentPosition = null; // 位置情報を保持する変数
+      /* 日付フィルターのスタイル */
+      .date-controls {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
 
-    function initMap() {
-      map = new google.maps.Map(document.getElementById('map'), {
-        zoom: 15,
-        center: {lat: 40.826, lng: 140.741412}, // 初期のセンターポイント
-        mapTypeId: 'satellite', // 初期表示を航空写真にする
-        controlSize: 64 
-      });
+      .date-controls label {
+        font-size: 20px;
+      }
 
-      // ヒートマップレイヤーを作成
-      heatmap = new google.maps.visualization.HeatmapLayer({
-        map: map,
-        radius: 20, // 初期半径
-        opacity: 0.7, // 初期透明度
-        maxIntensity: 5 // 固定された最大強度
-      });
+      .date-controls input[type="date"] {
+        padding: 5px;
+        font-size: 20px;
+      }
 
-      google.script.run.withSuccessHandler(function(data) {
-        geoData = data; // データを保持
-        console.log('GeoData (Initial):', geoData);
+      .date-controls button {
+        padding: 6px 12px;
+        font-size: 20px;
+        cursor: pointer;
+        border: none;
+        border-radius: 5px;
+        background-color: #007BFF;
+        color: white;
+        transition: background-color 0.3s;
+        margin-left: 30px;
+      }
 
-        // 初期ヒートマップを表示
-        updateMap(geoData);
-      }).getGeoData();
-    }
+      .date-controls button:hover {
+        background-color: #0056b3;
+      }
 
-    // ヒートマップを更新する関数
-    function updateMap(filteredData) {
-      var heatmapData = filteredData.map(function(location) {
-        return {
-          location: new google.maps.LatLng(parseFloat(location.latitude), parseFloat(location.longitude)),
-          weight: 1 // 全ポイントに一定の重みを与える
-        };
-      });
+      /* カメラ起動ボタンのスタイル */
+      #startCameraButton {
+        padding: 8px 16px;
+        font-size: 20px;
+        cursor: pointer;
+        border: none;
+        border-radius: 5px;
+        background-color: #28a745;
+        color: white;
+        transition: background-color 0.3s;
+      }
 
-      // ヒートマップのデータを設定
-      heatmap.setData(heatmapData);
+      #startCameraButton:hover {
+        background-color: #1e7e34;
+      }
 
-      // maxIntensity を固定にすることで濃さを一定に
-      heatmap.set('maxIntensity', 5); // 固定された最大強度
-    }
+      /* データ更新ボタンのスタイル */
+      #refreshButton {
+        padding: 8px 16px;
+        font-size: 20px;
+        cursor: pointer;
+        border: none;
+        border-radius: 5px;
+        background-color: #ff9800;
+        color: white;
+        transition: background-color 0.3s;
+      }
 
-    // 日付でデータをフィルタリングする関数
-    function filterByDate() {
-      var startDate = new Date(document.getElementById('startDate').value);
-      var endDate = new Date(document.getElementById('endDate').value);
+      #refreshButton:hover {
+        background-color: #e0a800;
+      }
 
-      // 開始日の時間を0時に設定
-      startDate.setHours(0, 0, 0, 0);
+      /* スライダーのスタイル */
+      .slider-container {
+        position: fixed;
+        top: 80px;
+        left: 0;
+        width: calc(100% - 40px);
+        padding: 10px 20px;
+        z-index: 9;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border-radius: 5px;
+      }
 
-      // 終了日の時間を23時59分59秒に設定
-      endDate.setHours(23, 59, 59, 999);
+      .slider-container label {
+        font-size: 20px;
+      }
 
-      console.log('Start Date:', startDate);
-      console.log('End Date:', endDate);
+      .slider-container input[type="range"] {
+        width: 200px;
+      }
 
-      // 日付範囲に基づいてデータをフィルタリング
-      var filteredData = geoData.filter(function(location) {
-        var captureDate = new Date(location.captureDate);
-        console.log('Capture Date:', captureDate); // デバッグ用に出力
+      .slider-container span {
+        font-size: 20px;
+        width: 30px;
+        text-align: center;
+      }
 
-        return captureDate >= startDate && captureDate <= endDate;
-      });
+      /* マップの表示領域 */
+      #map {
+        position: absolute;
+        top: 130px; /* ヘッダーとスライダーの下に配置 */
+        left: 0;
+        width: 100%;
+        height: calc(100% - 100px);
+        z-index: 1;
+      }
 
-      // フィルタリングされたデータでヒートマップを更新
-      updateMap(filteredData);
-    }
+      /* カメラ映像を表示する要素 */
+      #video-container {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: white; /* 撮影エリア以外を白に設定 */
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        z-index: 20;
+      }
 
-    // 半径を調整する関数
-    function adjustRadius() {
-      var radius = document.getElementById('radiusSlider').value;
-      heatmap.set('radius', parseInt(radius));
-      document.getElementById('radiusValue').innerText = radius; // 半径の値をリアルタイムで表示
-      console.log('Adjusted Radius:', radius); // デバッグ用に出力
-    }
+      /* ビデオをコンテナにフィットさせる */
+      #video {
+        width: 100%;
+        height: 80%;
+        object-fit: cover;
+        border-bottom: 2px solid #ccc;
+      }
 
-    // 位置情報の取得とカメラの起動
-    function startCameraWithLocation() {
-        // 位置情報を取得
-        navigator.geolocation.getCurrentPosition(function(position) {
-            // 位置情報の取得に成功した場合
-            console.log('Location access allowed');
+      /* ボタンコンテナを撮影エリアの下に配置 */
+      #buttons-container {
+        width: 100%;
+        text-align: center;
+        padding: 20px 0;
+        box-sizing: border-box;
+        background-color: #fff;
+      }
 
-            // 現在の位置を保持
-            currentPosition = {
-              latitude: position.coords.latitude,
-              longitude: position.coords.longitude
-            };
+      /* 撮影および停止ボタンのスタイル */
+      #controls button {
+        margin: 0 20px; /* ボタン間のスペースを広げる */
+        padding: 12px 24px; /* ボタンのサイズを大きく */
+        font-size: 24px; /* フォントサイズを大きく */
+        cursor: pointer;
+        border: none;
+        border-radius: 5px;
+        background-color: #28a745;
+        color: white;
+        transition: background-color 0.3s;
+      }
 
-            // カメラを起動する
-            startCamera();
+      #controls button:hover {
+        background-color: #1e7e34;
+      }
 
-        }, function(error) {
-            // 位置情報の取得に失敗した場合
-            alert('位置情報の取得が拒否されました。写真を保存できません。');
+      #controls #stop {
+        background-color: #dc3545;
+      }
+
+      #controls #stop:hover {
+        background-color: #c82333;
+      }
+
+      /* 撮影した写真のプレビューと保存・再撮影のオプション */
+      #preview-container {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(255,255,255,0.1);
+        display: none;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        padding: 20px;
+        box-sizing: border-box;
+        z-index: 30;
+      }
+
+      #preview-container img {
+        max-width: 90%;
+        max-height: 70%;
+        border: 5px solid #fff;
+        border-radius: 10px;
+      }
+
+      #preview-controls {
+        margin-top: 30px;
+        text-align: center;
+      }
+
+      #preview-controls button {
+        margin: 0 20px;
+        padding: 12px 24px;
+        font-size: 20px;
+        cursor: pointer;
+        border: none;
+        border-radius: 5px;
+        background-color: #28a745;
+        color: white;
+        transition: background-color 0.3s;
+      }
+
+      #preview-controls button:hover {
+        background-color: #1e7e34;
+      }
+
+      #preview-controls #retake {
+        background-color: #dc3545;
+      }
+
+      #preview-controls #retake:hover {
+        background-color: #c82333;
+      }
+
+      /* ステータスメッセージのスタイル */
+      #status {
+        position: fixed;
+        bottom: 20px;
+        width: 100%;
+        text-align: center;
+        color: black; /* 黒文字で表示 */
+        font-size: 18px;
+        font-weight: bold;
+        z-index: 35;
+      }
+      #loadingOverlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(255, 255, 255, 0.8); /* 背景を半透明にして他の要素を隠す */
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 9999; /* 他のすべての要素の上に表示 */
+      }
+      #loadingOverlay p {
+        font-size: 2rem;
+        margin-left: 20px;
+      }
+      .spinner {
+        border: 4px solid rgba(0, 0, 0, 0.1);
+        width: 72px;
+        height: 72px;
+        border-radius: 50%;
+        border-left-color: #09f;
+        animation: spin 1s linear infinite;
+      }
+
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+
+      /* 非表示のキャンバス */
+      #canvas {
+        display: none;
+      }
+
+      /* レスポンシブデザイン */
+      @media (max-width: 768px) {
+        .slider-container {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+
+        .slider-container input[type="range"] {
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="header">
+      <div class="date-controls">
+        <label for="startDate">開始日:</label>
+        <input type="date" id="startDate" name="startDate">
+        <label for="endDate">終了日:</label>
+        <input type="date" id="endDate" name="endDate">
+        <button type="button" onclick="filterByDate()">日付絞り込み</button>
+      </div>
+      <button id="startCameraButton">写真を撮影</button>
+      <button id="refreshButton">データ更新</button>
+      <div id="loadingOverlay" style="display:none;">
+        <div class="spinner"></div>
+        <p>更新中です...</p>
+      </div>
+    </div>
+
+    <div class="slider-container">
+      <label for="radiusSlider">半径:</label>
+      <input type="range" id="radiusSlider" name="radius" min="1" max="20" value="20" oninput="adjustRadius()">
+      <span id="radiusValue">20</span>
+    </div>
+
+    <div id="map"></div>
+
+    <div id="video-container">
+      <video id="video" autoplay playsinline></video>
+      <div id="buttons-container">
+        <div id="controls">
+          <button id="capture">写真を撮影</button>
+          <button id="stop">カメラを停止</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="preview-container">
+      <img id="preview-image" src="">
+      <div id="preview-controls">
+        <button id="save">写真を保存</button>
+        <button id="retake">再撮影</button>
+      </div>
+    </div>
+
+    <div id="status"></div>
+
+    <canvas id="canvas"></canvas>
+
+    <script>
+      var geoData = []; 
+      var heatmap; 
+      var map; 
+      var currentPosition = null; 
+
+      let stream = null;
+      let currentImageData = null;
+      let currentLocation = null;
+
+      const video = document.getElementById('video');
+      const canvas = document.getElementById('canvas');
+      const context = canvas.getContext('2d');
+      const startCameraButton = document.getElementById('startCameraButton');
+      const stopButton = document.getElementById('stop');
+      const captureButton = document.getElementById('capture');
+      const saveButton = document.getElementById('save');
+      const retakeButton = document.getElementById('retake');
+      const statusDiv = document.getElementById('status');
+      const buttonsContainer = document.getElementById('buttons-container');
+      const videoContainer = document.getElementById('video-container');
+      const previewContainer = document.getElementById('preview-container');
+      const previewImage = document.getElementById('preview-image');
+
+      function initMap() {
+        map = new google.maps.Map(document.getElementById('map'), {
+          zoom: 15,
+          center: {lat: 40.824, lng: 140.741412}, 
+          mapTypeId: 'satellite', 
+          controlSize: 64 
         });
-    }
 
-    // カメラを起動して写真を撮影する関数
-    function startCamera() {
-        document.getElementById('cameraInput').click();
-    }
+        heatmap = new google.maps.visualization.HeatmapLayer({
+          map: map,
+          radius: 20, 
+          opacity: 0.7, 
+          maxIntensity: 5 
+        });
 
-    // 写真をアップロードして位置情報をサーバーに送信する関数
-    function uploadPhoto(event) {
-        var file = event.target.files[0];
-        if (file) {
-            // 位置情報の取得はカメラ起動前に確認済みなので、そのまま進行
-            if (!currentPosition) {
-              alert('位置情報が取得されていません。写真を保存できません。');
-              return;
+        google.script.run.withSuccessHandler(function(data) {
+          geoData = data; 
+          console.log('GeoData (Initial):', geoData);
+          updateMap(geoData);
+        }).getGeoData();
+      }
+
+      function updateMap(filteredData) {
+        var heatmapData = filteredData.map(function(location) {
+          return {
+            location: new google.maps.LatLng(parseFloat(location.latitude), parseFloat(location.longitude)),
+            weight: 1 
+          };
+        });
+
+        heatmap.setData(heatmapData);
+        heatmap.set('maxIntensity', 5); 
+      }
+
+      function filterByDate() {
+        var startDate = new Date(document.getElementById('startDate').value);
+        var endDate = new Date(document.getElementById('endDate').value);
+
+        startDate.setHours(0, 0, 0, 0);
+        endDate.setHours(23, 59, 59, 999);
+
+        console.log('Start Date:', startDate);
+        console.log('End Date:', endDate);
+
+        var filteredData = geoData.filter(function(location) {
+          var captureDate = new Date(location.captureDate);
+          console.log('Capture Date:', captureDate); 
+
+          return captureDate >= startDate && captureDate <= endDate;
+        });
+
+        updateMap(filteredData);
+      }
+
+      function adjustRadius() {
+        var radius = document.getElementById('radiusSlider').value;
+        heatmap.set('radius', parseInt(radius));
+        document.getElementById('radiusValue').innerText = radius; 
+        console.log('Adjusted Radius:', radius); 
+      }
+
+      startCameraButton.addEventListener('click', () => {
+        if (stream) {
+          alert('カメラはすでに起動しています。');
+          return;
+        }
+        navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: "environment", 
+            width: { ideal: 1280 }, 
+            height: { ideal: 720 }
+          },
+          audio: false
+        })
+          .then((s) => {
+            stream = s;
+            video.srcObject = stream;
+            video.play();
+            video.onloadedmetadata = () => {
+              canvas.width = video.videoWidth;
+              canvas.height = video.videoHeight;
+              console.log('Video metadata loaded. Canvas size set.');
+            };
+            startCameraButton.style.display = 'none';
+            videoContainer.style.display = 'flex';
+            buttonsContainer.style.display = 'block'; 
+            document.getElementById('header').style.display = 'none';
+            document.querySelector('.slider-container').style.display = 'none';
+            document.getElementById('map').style.display = 'none';
+            statusDiv.textContent = '';
+          })
+          .catch((err) => {
+            console.error('カメラの取得に失敗しました: ', err);
+            alert('カメラの取得に失敗しました。ブラウザの設定を確認してください。');
+          });
+      });
+
+      stopButton.addEventListener('click', () => {
+        if (stream) {
+          stream.getTracks().forEach(track => track.stop());
+          video.srcObject = null;
+          stream = null;
+          startCameraButton.style.display = 'block';
+          videoContainer.style.display = 'none';
+          buttonsContainer.style.display = 'none'; 
+          previewContainer.style.display = 'none';
+          document.getElementById('header').style.display = 'flex';
+          document.querySelector('.slider-container').style.display = 'flex';
+          document.getElementById('map').style.display = 'block';
+          statusDiv.textContent = '';
+        } else {
+          alert('カメラは起動していません。');
+        }
+      });
+
+      captureButton.addEventListener('click', () => {
+        if (!stream) {
+          alert('まずカメラを起動してください。');
+          return;
+        }
+
+        statusDiv.textContent = '位置情報を取得しています...';
+
+        if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
+              currentLocation = {
+                latitude: position.coords.latitude,
+                longitude: position.coords.longitude
+              };
+              console.log('位置情報を取得しました:', currentLocation);
+              statusDiv.textContent = '写真を撮影しています...';
+              takePhoto(currentLocation);
+            },
+            (error) => {
+              console.error('位置情報の取得に失敗しました:', error);
+              alert('位置情報の取得に失敗しました。写真は位置情報なしで保存されます。');
+              statusDiv.textContent = '写真を撮影しています...';
+              takePhoto(null);
+            },
+            {
+              enableHighAccuracy: true,
+              maximumAge: 0,
+              timeout: 5000
+            }
+          );
+        } else {
+          alert('このブラウザでは位置情報がサポートされていません。写真は位置情報なしで保存されます。');
+          statusDiv.textContent = '写真を撮影しています...';
+          takePhoto(null);
+        }
+      });
+
+      function takePhoto(location) {
+        try {
+          context.drawImage(video, 0, 0, canvas.width, canvas.height);
+          let imageData = canvas.toDataURL('image/jpeg', 0.7); 
+          console.log('Original image captured.');
+
+          const MAX_WIDTH = 600; 
+          const img = new Image();
+          img.onload = () => {
+            let width = img.width;
+            let height = img.height;
+
+            if (width > MAX_WIDTH) {
+              height *= MAX_WIDTH / width;
+              width = MAX_WIDTH;
             }
 
-            var reader = new FileReader();
-            reader.onload = function(e) {
-                var imgData = e.target.result;
+            const resizeCanvas = document.createElement('canvas');
+            resizeCanvas.width = width;
+            resizeCanvas.height = height;
+            const resizeContext = resizeCanvas.getContext('2d');
+            resizeContext.drawImage(img, 0, 0, width, height);
+            let resizedImageData = resizeCanvas.toDataURL('image/jpeg', 0.6); 
+            console.log('Image resized.');
 
-                // EXIFデータの埋め込みを削除
+            currentImageData = resizedImageData;
+            console.log('EXIF embedding skipped.');
 
-                // プレビュー画面に表示
-                document.getElementById('preview-image').src = imgData;
-                document.getElementById('preview-container').style.display = 'flex';
-                document.getElementById('map').style.display = 'none';
-                document.getElementById('controls').style.display = 'none';
-                document.getElementById('slider-container').style.display = 'none';
-                document.getElementById('status').textContent = '';
-            };
-            reader.readAsDataURL(file);
+            previewImage.src = currentImageData;
+            previewContainer.style.display = 'flex';
+            videoContainer.style.display = 'none';
+            buttonsContainer.style.display = 'none'; 
+            statusDiv.textContent = '';
+          };
+          img.onerror = (error) => {
+            console.error('Image load error:', error);
+            alert('画像の処理中にエラーが発生しました。');
+            statusDiv.textContent = '';
+          };
+          img.src = imageData;
+        } catch (error) {
+          console.error('takePhoto function error:', error);
+          alert('写真の撮影中にエラーが発生しました。');
+          statusDiv.textContent = '';
         }
-    }
+      }
 
-    // 写真を保存する関数
-    function savePhoto() {
-        var imgData = document.getElementById('preview-image').src;
-        google.script.run.withSuccessHandler(function(response) {
-            alert(response);
-            // プレビュー画面を閉じてマップを再表示
-            document.getElementById('preview-container').style.display = 'none';
-            document.getElementById('map').style.display = 'block';
-            document.getElementById('controls').style.display = 'block';
-            document.getElementById('slider-container').style.display = 'block';
-            // ファイル入力をリセット
-            document.getElementById('cameraInput').value = "";
-            // 現在の位置情報をリセット
-            currentPosition = null;
-        }).withFailureHandler(function(error) {
-            alert('写真の保存に失敗しました: ' + error);
-        }).saveImage(imgData, currentPosition);
-    }
+      saveButton.addEventListener('click', () => {
+        google.script.run
+          .withFailureHandler((error) => {
+            console.error('画像の保存に失敗しました: ' + error);
+            alert('画像の保存に失敗しました: ' + error);
+          })
+          .saveImage(currentImageData, currentLocation);
 
-    // 再撮影する関数
-    function retakePhoto() {
-        // プレビュー画面を閉じて再度カメラを起動
-        document.getElementById('preview-container').style.display = 'none';
-        document.getElementById('map').style.display = 'block';
-        document.getElementById('controls').style.display = 'block';
-        document.getElementById('slider-container').style.display = 'block';
-        // カメラを再起動
-        startCamera();
-    }
-  </script>
+        previewContainer.style.display = 'none';
+        videoContainer.style.display = 'flex';
+        buttonsContainer.style.display = 'block'; 
+      });
 
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      font-size: 16px;
-      margin: 0;
-      padding: 0;
-    }
-    /* フォームのスタイル */
-    form {
-      padding: 20px 10px;
-      width: calc(100% - 20px);
-      position: fixed;
-      top: env(safe-area-inset-top);
-      left: 10px;
-      z-index: 1;
-      display: flex;
-      gap: 50px;
-      align-items: center;
-    }
-    .date-controls {
-      font-size: 24px;
-      display: flex;
-      align-items: center;
-      gap: 5px;
-    }
-    /* スライダーのスタイル */
-    .slider-container {
-      position: fixed;
-      top: calc(env(safe-area-inset-top) + 60px);
-      left: 10px;
-      width: calc(100% - 40px);
-      z-index: 1;
-      padding: 20px 10px;
-    }
-    /* マップを画面いっぱいに表示するためのスタイル */
-    #map {
-      margin-top: calc(env(safe-area-inset-top) + 120px);
-      height: calc(100vh - 120px - env(safe-area-inset-top));
-      width: 100%;
-    }
-    /* ファイル入力要素を隠す */
-    #cameraInput {
-      display: none;
-    }
-    input[type="date"], button {
-      font-size: 24px;
-      padding: 8px;
-    }
-    label {
-      white-space: nowrap;
-    }
+      retakeButton.addEventListener('click', () => {
+        if (!stream) {
+          alert('まずカメラを起動してください。');
+          return;
+        }
+        previewContainer.style.display = 'none';
+        videoContainer.style.display = 'flex';
+        buttonsContainer.style.display = 'block'; 
+        statusDiv.textContent = '';
+      });
 
-    /* プレビューコンテナのスタイル */
-    #preview-container {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background-color: rgba(0,0,0,0.9);
-      display: none;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      padding: 20px;
-      box-sizing: border-box;
-      z-index: 2; /* フォームやマップより前面に表示 */
-    }
+      // 「最新にする」ボタンのクリックイベント
+      document.getElementById('refreshButton').addEventListener('click', () => {
+        // ローディングオーバーレイを表示
+        document.getElementById('loadingOverlay').style.display = 'flex';
 
-    #preview-container img {
-      max-width: 90%;
-      max-height: 70%;
-      border: 5px solid #fff;
-      border-radius: 10px;
-    }
+        // 10秒後に強制リロード
+        setTimeout(() => {
+          window.location.reload(true); // 強制的にリロード（キャッシュを無視）
+        }, 10000); 
 
-    #preview-controls {
-      margin-top: 30px;
-      text-align: center;
-    }
+        google.script.run.withSuccessHandler(() => {
+          console.log('GeoData extraction succeeded');
+          
+          window.location.href = 'https://script.google.com/a/macros/symphodia.co.jp/s/AKfycbzXrggeP_lCCKVs4p_OpiUlVdXfkRhcHS_wFcOWRmFwMZRB-9y8MbLx5sHZ8o5614B6/exec'; // 指定のURLにリダイレクト
+        }).withFailureHandler((error) => {
+          console.error('GeoData extraction failed', error);
+          // エラー時はオーバーレイを非表示にしてリダイレクトを中止
+          document.getElementById('loadingOverlay').style.display = 'none';
+        }).extractGeoData();
+      });
 
-    #preview-controls button {
-      margin: 0 20px; /* ボタン間のスペースを広げる */
-      padding: 15px 35px; /* ボタンのサイズを大きく */
-      font-size: 18px; /* フォントサイズを大きく */
-      cursor: pointer;
-      border: none;
-      border-radius: 10px;
-      background-color: #28a745;
-      color: white;
-      transition: background-color 0.3s;
-    }
-
-    #preview-controls button:hover {
-      background-color: #1e7e34;
-    }
-
-    #preview-controls #retake {
-      background-color: #dc3545;
-    }
-
-    #preview-controls #retake:hover {
-      background-color: #c82333;
-    }
-  </style>
-</head>
-<body onload="initMap()">
-
-  <!-- 日付フィルター用フォーム -->
-  <form>
-    <div class="date-controls">
-      <label for="startDate">開始日:</label>
-      <input type="date" id="startDate" name="startDate">
-      <label for="endDate">終了日:</label>
-      <input type="date" id="endDate" name="endDate">
-      <button type="button" onclick="filterByDate()">更新</button>
-    </div>
-    <button type="button" onclick="startCameraWithLocation()">写真を撮影</button>
-    <!-- ファイル入力要素 -->
-    <input type="file" id="cameraInput" accept="image/*" capture="environment" onchange="uploadPhoto(event)">
-  </form>
-
-  <!-- ヒートマップの半径を調整するスライダー -->
-  <div class="slider-container">
-    <label for="radiusSlider">半径:</label>
-    <input type="range" id="radiusSlider" name="radius" min="1" max="20" value="20" oninput="adjustRadius()">
-    <span id="radiusValue">20</span>
-  </div>
-
-  <!-- マップの表示領域 -->
-  <div id="map"></div>
-
-  <!-- 撮影後のプレビュー画面 -->
-  <div id="preview-container">
-    <img id="preview-image" src="">
-    <div id="preview-controls">
-      <button id="save" onclick="savePhoto()">保存</button>
-      <button id="retake" onclick="retakePhoto()">再撮影</button>
-    </div>
-  </div>
-
-</body>
+      
+      window.onload = function() {
+        initMap();
+      };
+    </script>
+  </body>
 </html>
